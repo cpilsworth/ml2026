@@ -12,6 +12,7 @@ solves that kind of problem, copy it, and adapt it to the new data.
 | `Week2.py`, `Week3.py`, `Week4.py`, `Week6.py` | **Working reference code** to copy and adapt |
 | `README` | Plain-English model descriptions, cleaning snippets, report checklist |
 | `Key_Functions_for_Adapting_Code.md` | What each function you need to change does, and what to change it to |
+| `Adapting_Week_Files_Presentation.html` | Slides walking through every step, with before/after code. [Open the preview](https://htmlpreview.github.io/?https://github.com/cpilsworth/ml2026/blob/main/Adapting_Week_Files_Presentation.html) |
 
 Everything in this playbook was tested by adapting each week file to a different
 dataset. The errors quoted are the real ones you'll see.

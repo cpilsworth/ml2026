@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adapting a Week File to a New Dataset</title>
+<style>
+  :root {
+    --bg: #f6f7fb; --card: #ffffff; --ink: #1d2433; --muted: #5b6475; --line: #e3e6ee;
+    --understand: #2f6fde; --adapt: #7a4cd9; --clean: #0f9488; --model: #e07a10; --evaluate: #1f9d55; --ref: #c03a6b;
+    --accent: var(--understand);
+    --code-bg: #1e2230; --code-ink: #e6e9f2;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font: 17px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header.top { position: fixed; inset: 0 0 auto 0; height: 58px; display: flex; align-items: center; gap: 16px;
+    padding: 0 22px; background: var(--card); border-bottom: 1px solid var(--line); z-index: 10; }
+  header.top .brand { font-weight: 700; font-size: 15px; white-space: nowrap; }
+  .tracker { display: flex; gap: 5px; flex: 1; justify-content: center; flex-wrap: nowrap; overflow: hidden; }
+  .tracker button { border: 0; cursor: pointer; min-width: 30px; height: 30px; border-radius: 15px; padding: 0 9px;
+    font: 600 12px system-ui, sans-serif; color: var(--muted); background: #eef0f5; transition: all .15s; }
+  .tracker button.done { background: #dfe4f0; color: var(--ink); }
+  .tracker button.current { color: #fff; background: var(--accent); transform: scale(1.08); }
+  .tracker button .lbl { display: none; margin-left: 6px; }
+  .tracker button.current .lbl { display: inline; }
+  .counter { font: 600 13px system-ui, sans-serif; color: var(--muted); white-space: nowrap; }
+  .progress { position: fixed; top: 58px; left: 0; height: 3px; background: var(--accent); transition: width .2s; z-index: 10; }
+
+  main { position: absolute; inset: 61px 0 56px 0; }
+  .slide { display: none; height: 100%; overflow-y: auto; padding: 26px 5vw 30px; }
+  .slide.active { display: block; animation: fade .2s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .inner { max-width: 1240px; margin: 0 auto; }
+
+  footer.nav { position: fixed; inset: auto 0 0 0; height: 56px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 22px; background: var(--card); border-top: 1px solid var(--line); z-index: 10; }
+  footer.nav button { border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer;
+    padding: 8px 16px; border-radius: 8px; font: 600 14px system-ui, sans-serif; }
+  footer.nav button:hover { border-color: var(--accent); color: var(--accent); }
+  footer.nav .hint { color: var(--muted); font-size: 13px; }
+
+  .kicker { display: inline-flex; align-items: center; gap: 8px; font: 700 13px system-ui, sans-serif; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+  .kicker .num { background: var(--accent); color: #fff; border-radius: 6px; padding: 2px 8px; }
+  h1 { font-size: 34px; line-height: 1.2; margin: 0 0 6px; }
+  h2 { font-size: 21px; margin: 22px 0 8px; }
+  h3 { font-size: 16px; margin: 0 0 8px; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; }
+  p.lead { font-size: 19px; color: var(--muted); margin: 0 0 18px; max-width: 900px; }
+  .grid { display: grid; gap: 18px; }
+  .g2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .g2w { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.25fr); }
+  .g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  @media (max-width: 900px) { .g2, .g2w, .g3, .g4 { grid-template-columns: 1fr; } h1 { font-size: 27px; } .tracker { display: none; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .card.tint { border-left: 5px solid var(--accent); }
+  .card ul, .card ol { margin: 6px 0 0; padding-left: 20px; }
+  .card li { margin: 4px 0; }
+  .why { background: color-mix(in srgb, var(--accent) 8%, white); border: 1px solid color-mix(in srgb, var(--accent) 25%, white); }
+  .warn { background: #fff6e8; border: 1px solid #f3d29a; border-radius: 10px; padding: 10px 14px; margin-top: 12px; }
+  .tip { background: #eaf7ef; border: 1px solid #b7e2c6; border-radius: 10px; padding: 10px 14px; margin-top: 12px; }
+  .warn b, .tip b { display: inline-block; margin-right: 4px; }
+  code { font: 0.9em ui-monospace, "SF Mono", Menlo, Consolas, monospace; background: #eef0f5; padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+
+  pre { margin: 0; background: var(--code-bg); color: var(--code-ink); border-radius: 10px; padding: 14px 16px; overflow-x: auto;
+    font: 14px/1.55 ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+  pre code { background: none; padding: 0; font: inherit; color: inherit; }
+  .codehead { font: 600 13px system-ui, sans-serif; color: var(--muted); margin: 0 0 6px; }
+  .codehead + pre { margin-bottom: 14px; }
+  pre .c { color: #8a93a8; font-style: italic; }
+  pre .s { color: #a6e3a1; }
+  pre .n { color: #fab387; }
+  pre .k { color: #cba6f7; font-weight: 600; }
+  pre .f { color: #89b4fa; }
+  pre .ln { display: block; padding: 0 6px 0 calc(6px + 1.4em); text-indent: -1.4em; margin: 0 -6px; border-radius: 3px; }
+  pre .ln.del { background: rgba(243, 139, 168, .16); }
+  pre .ln.add { background: rgba(166, 227, 161, .14); }
+  pre .ln::before { display: inline-block; width: 1.4em; text-indent: 0; color: #6c7389; content: " "; }
+  pre .ln.del::before { content: "−"; color: #f38ba8; }
+  pre .ln.add::before { content: "+"; color: #a6e3a1; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 15px; background: var(--card); border-radius: 10px; overflow: hidden; }
+  th, td { text-align: left; padding: 8px 11px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: #f0f2f7; font-size: 13px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+  tr:last-child td { border-bottom: 0; }
+
+  dl.explain { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; font-size: 15px; }
+  dl.explain dt { font: 600 13.5px ui-monospace, Menlo, Consolas, monospace; color: var(--accent); padding-top: 2px; }
+  dl.explain dd { margin: 0; }
+
+  .flow { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+  .flow a { flex: 1 1 200px; text-decoration: none; color: var(--ink); background: var(--card); border: 1px solid var(--line);
+    border-left: 5px solid var(--c); border-radius: 10px; padding: 10px 12px; }
+  .flow a:hover { border-color: var(--c); }
+  .flow a b { display: block; font-size: 13px; color: var(--c); text-transform: uppercase; letter-spacing: .04em; }
+  .pill { display: inline-block; border-radius: 999px; padding: 2px 10px; font: 600 12.5px system-ui, sans-serif; color: #fff; background: var(--accent); }
+  .big3 .card h3 { font-size: 15px; }
+  .decision { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+  @media (max-width: 900px) { .decision { grid-template-columns: 1fr 1fr; } }
+  .decision div { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; text-align: center; }
+  .decision div b { display: block; color: var(--accent); }
+  .title-slide { display: flex; flex-direction: column; justify-content: center; min-height: 100%; }
+  .title-slide h1 { font-size: 46px; }
+  .result { font: 700 15px ui-monospace, Menlo, monospace; }
+  .muted { color: var(--muted); }
+  kbd { font: 600 12px ui-monospace, Menlo, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 1px 6px; background: #fff; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">Adapting a Week File</div>
+  <nav class="tracker" id="tracker" aria-label="Steps"></nav>
+  <div class="counter" id="counter"></div>
+</header>
+<div class="progress" id="progress"></div>
+
+<main id="deck">
+
+<!-- ===================================================================== -->
+<section class="slide" data-step="0" data-color="understand">
+  <div class="inner title-slide">
+    <div class="kicker">ADML 2026 · Exam technique</div>
+    <h1>Adapting a Week File to a New Dataset</h1>
+    <p class="lead">A step-by-step guide from an exam brief to working results. You'll reuse the week
+      examples (<code>Week2.py</code>, <code>Week3.py</code>, <code>Week4.py</code>, <code>Week6.py</code>)
+      instead of writing a model from scratch.</p>
+    <div class="grid g3">
+      <div class="card"><h3>Each step shows</h3>What needs to change and <b>why</b>, the key code change, and a plain-English explainer for every function.</div>
+      <div class="card"><h3>Navigate</h3><kbd>→</kbd> / <kbd>Space</kbd> next · <kbd>←</kbd> back · <kbd>Home</kbd> start · click the numbered steps at the top to jump.</div>
+      <div class="card"><h3>Go with</h3><code>Exam_Playbook.md</code> (process), <code>Key_Functions_for_Adapting_Code.md</code> (function details), <code>Analysis_and_Model_Selection_Guide.md</code> (choosing).</div>
+    </div>
+    <p class="muted" style="margin-top:18px">Line numbers refer to the original week files. Every change shown here was tested by adapting the files to new datasets.</p>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section class="slide" data-step="0" data-color="understand">
+  <div class="inner">
+    <div class="kicker">The big idea</div>
+    <h1>Most of the week file stays exactly as it is</h1>
+    <p class="lead">The model maths, <code>fit</code>, <code>predict</code> and the scores don't care what your data is about.
+      You only change the lines that mention <b>your data</b>. They fall into three groups:</p>
+    <div class="grid g3 big3">
+      <div class="card tint" style="--accent: var(--adapt)"><h3>A · Where &amp; what</h3>
+        The file name, column names, which column is the answer, and what the labels are called.
+        <div class="muted" style="margin-top:6px"><code>read_csv</code> · <code>rename</code> · <code>features</code> · <code>X</code>/<code>y</code> · <code>map</code></div></div>
+      <div class="card tint" style="--accent: var(--clean)"><h3>B · Form</h3>
+        Turning your data into what the model accepts: numbers with no gaps, a 0/1 basket table, or clean text.
+        <div class="muted" style="margin-top:6px"><code>fillna</code> · <code>to_numeric</code> · <code>get_dummies</code> · <code>StandardScaler</code></div></div>
+      <div class="card tint" style="--accent: var(--model)"><h3>C · Settings</h3>
+        Numbers inside model functions that depend on your data's size and shape.
+        <div class="muted" style="margin-top:6px"><code>k</code> · <code>eps</code> · <code>min_support</code> · <code>average</code> · <code>max_depth</code></div></div>
+    </div>
+    <div class="tip"><b>Spotting trick:</b> scan the week file for anything in <b>quotation marks</b> (<code>"Mall_Customers.csv"</code>, <code>"France"</code>, <code>'positive'</code>)
+      and any <b>number written into a function call</b> (<code>k = 5</code>, <code>eps=0.7</code>, <code>min_support=0.05</code>). Almost everything you need to change is one or the other.</div>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section class="slide" data-step="0" data-color="understand">
+  <div class="inner">
+    <div class="kicker">The journey</div>
+    <h1>Thirteen steps, from brief to write-up</h1>
+    <p class="lead">Click any step to jump to it. A rough time split: 10% understanding, 25% cleaning, 35% adapting and modelling, 30% interpreting and writing up.</p>
+    <div class="flow" id="journey"></div>
+  </div>
+</section>
+
+<!-- ===================================================================== STEP 1 -->
+<section class="slide" data-step="1" data-color="understand" data-title="Understand">
+  <div class="inner">
+    <div class="kicker"><span class="num">Step 1</span> Understand the brief</div>
+    <h1>Write the business question in one sentence</h1>
+    <p class="lead">The brief's key verbs tell you the <b>type</b> of analysis, and the type tells you which week file to start from.</p>
+    <div class="grid g2w">
+      <div class="card why"><h3>What changes &amp; why</h3>
+        <ul>
+          <li>Nothing in the code yet. This step decides <b>which file</b> you'll adapt.</li>
+          <li>Underline the verbs in the brief: <i>predict</i>, <i>segment</i>, <i>bought together</i>, <i>reviews</i>…</li>
+          <li>Write the question down, e.g. <i>"Predict which customers will leave, and what drives it."</i> It becomes the first line of your report.</li>
+          <li>Asked for <b>two techniques</b>? Note that now (see the combinations on step 4).</li>
+        </ul>
+      </div>
+      <table>
+        <tr><th>The brief says…</th><th>Type</th><th>Start from</th></tr>
+        <tr><td>"predict whether / which", "classify", "likely to"</td><td>Classification</td><td><code>Week2.py</code> / Template 3A</td></tr>
+        <tr><td>"predict how much / the price / the value"</td><td>Regression</td><td>Template + swap models (step 10)</td></tr>
+        <tr><td>"segment", "group", "types of customer", "profile"</td><td>Clustering</td><td><code>Week3.py</code></td></tr>
+        <tr><td>"bought together", "recommend", "basket", "bundle"</td><td>Association rules</td><td><code>Week4.py</code></td></tr>
+        <tr><td>"reviews", "comments", "tweets", "sentiment"</td><td>Text classification</td><td><code>Week6.py</code></td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== STEP 2 -->
+<section class="slide" data-step="2" data-color="understand" data-title="First look">
+  <div class="inner">
+    <div class="kicker"><span class="num">Step 2</span> First look at the data</div>
+    <h1>Look before you change anything</h1>
+    <p class="lead">Eight lines tell you the size, the column types, the gaps and the balance, which is everything the next steps depend on.
+      (Or run Part 1 of <code>Starter_Template.py</code>, which does the same.)</p>
+    <div class="grid g2">
+      <div>
+        <div class="codehead">first_look.py</div>
+<pre><code class="py">import pandas as pd
+
+df = pd.read_csv("new_data.csv")     # add sep="\t" for tab files
+print(df.shape)                      # (rows, columns)
+print(df.head())                     # first 5 rows
+df.info()                            # types + non-missing counts
+print(df.describe())                 # min / max / average
+print(df.isnull().sum())             # gaps in each column
+print(df.duplicated().sum())         # rows that are exact copies
+print(df["Target"].value_counts())   # class balance (if there's an answer)</code></pre>
+        <div class="tip"><b>Screenshot these.</b> They're the evidence for the "data understanding" part of your report.</div>
+      </div>
+      <div class="card"><h3>Explainer: what to look for</h3>
+        <dl class="explain">
+          <dt>pd.read_csv</dt><dd>Reads the file into a table called <code>df</code>. Everything in one column? Wrong separator: add <code>sep="\t"</code> or <code>sep=";"</code>.</dd>
+          <dt>df.info()</dt><dd>A number column showing as <code>object</code>/<code>str</code> contains text (e.g. <code>"£5"</code>) and must be fixed. It prints by itself, so don't wrap it in <code>print</code>.</dd>
+          <dt>df.describe()</dt><dd>Look for impossible values: a minimum of 0 where 0 can't happen, a maximum like age 999.</dd>
+          <dt>isnull().sum()</dt><dd>Gaps per column. Models can't handle gaps, so step 8 fills them.</dd>
+          <dt>duplicated().sum()</dt><dd>Copied rows to remove in step 8.</dd>
+          <dt>value_counts()</dt><dd>How many of each answer. One class above about 80%? Use F1 rather than accuracy.</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== STEP 3 -->
+<section class="slide" data-step="3" data-color="understand" data-title="Classify">
+  <div class="inner">
+    <div class="kicker"><span class="num">Step 3</span> Classify the problem</div>
+    <h1>Answer five questions, and the type follows</h1>
+    <p class="lead">From section 3 of the guide. Write the answers down: they become your report's justification for the method.</p>
+    <div class="grid g2">
+      <div class="card why"><h3>The five questions</h3>
+        <ol>
+          <li><b>What is one row?</b> A person? An item in a basket? A review?</li>
+          <li><b>Is there an answer column?</b> Yes = supervised; no = unsupervised.</li>
+          <li><b>What does the answer hold?</b> Categories (Yes/No, bands 0–3) or a number on a scale? Check with <code>df["col"].nunique()</code>.</li>
+          <li><b>What are the other columns like?</b> IDs to drop, text categories, numbers stored as text, impossible values.</li>
+          <li><b>How big, and is it balanced?</b> <code>df.shape</code>, <code>value_counts()</code>.</li>
+        </ol>
+      </div>
+      <div>
+        <div class="card"><h3>Decision</h3>
+          <div class="decision">
+            <div><b>Answer = categories</b>Classification<br><span class="muted">Week 2</span></div>
+            <div><b>Answer = a number</b>Regression<br><span class="muted">step 10 swap</span></div>
+            <div><b>No answer, find groups</b>Clustering<br><span class="muted">Week 3</span></div>
+            <div><b>Rows = items in baskets</b>Association<br><span class="muted">Week 4</span></div>
+          </div>
+          <div class="decision" style="grid-template-columns:1fr">
+            <div><b>Mostly free text + a label</b>Clean and vectorise the text, then classify · <span class="muted">Week 6</span></div>
+          </div>
+        </div>
+        <div class="warn"><b>Watch out:</b> a few whole numbers that stand for groups (like <code>price_range</code> 0–3) are <b>categories</b>, so it's classification, not regression.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== STEP 4 -->
+<section class="slide" data-step="4" data-color="adapt" data-title="Pick &amp; copy">
+  <div class="inner">
+    <div class="kicker"><span class="num">Step 4</span> Pick the week file and copy it</div>
+    <h1>Start from the file whose data looks most like yours</h1>
+    <p class="lead">Not the one with the most models. Copy it to a new name and keep the original open next to it as a reference.</p>
+    <div class="grid g2w">
+      <table>
+        <tr><th>Your problem</th><th>Copy</th><th>It already has</th></tr>
+        <tr><td>Classification (simple)</td><td>Template Part 3A</td><td>Split, scale, Decision Tree, Random Forest, Logistic Regression, KNN, report, importance</td></tr>
+        <tr><td>Classification + ensembles</td><td><code>Week2.py</code></td><td>AdaBoost, Bagging, soft and hard voting, repeated cross-validation</td></tr>
+        <tr><td>Clustering</td><td><code>Week3.py</code></td><td>Elbow and silhouette, K-Means, Fuzzy C-Means, DBSCAN, Agglomerative</td></tr>
+        <tr><td>Association rules</td><td><code>Week4.py</code></td><td>Baskets, 0/1 encoding, apriori, rules by confidence and lift</td></tr>
+        <tr><td>Text</td><td><code>Week6.py</code></td><td>Text cleaning, word counts and TF-IDF, Naive Bayes, Logistic Regression, SGD, word clouds</td></tr>
+      </table>
+      <div>
+        <div class="codehead">Make your working copy (terminal, or copy &amp; paste in PyCharm)</div>
+<pre><code class="py">cp Week3.py exam_task.py      # macOS / Linux
+copy Week3.py exam_task.py    # Windows</code></pre>
+        <div class="card"><h3>Two techniques?</h3>
+          <ul>
+            <li><b>Two classifiers:</b> Template 3A, which already compares four.</li>
+            <li><b>Clustering → classification:</b> Week 3 for the segments, then a decision tree to explain them.</li>
+            <li><b>Two clustering methods:</b> Week 3 has four.</li>
+            <li><b>Text + classifier:</b> Week 6 compares three.</li>
+          </ul>
+        </div>
+        <div class="warn"><b>Never edit the original.</b> If your copy breaks, the working reference is still there.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== STEP 5 -->
+<section class="slide" data-step="5" data-color="adapt" data-title="Load">
+  <div class="inner">
+    <div class="kicker"><span class="num">Step 5</span> Load your data</div>
+    <h1>Change the load line</h1>
+    <p class="lead">Every week file reads its own dataset. Point it at yours. Week 2 doesn't read a file at all, so its loading block is replaced.</p>
+    <div class="grid g2">
+      <div>
+        <div class="codehead">Week3.py · line 32 (Week 4 line 16 and Week 6 line 40 are the same idea)</div>
+<pre class="diff"><code class="py">-df = pd.read_csv("Mall_Customers.csv")
++df = pd.read_csv("customers.csv")
++# tab-separated?        pd.read_csv("file.csv", sep="\t")
++# odd characters fail?  pd.read_csv("file.csv", encoding="latin1")</code></pre>
+        <div class="codehead">Week2.py · lines 41–55 (condensed): built-in data → your file</div>
+<pre class="diff"><code class="py">-breast_cancer = load_breast_cancer()
+-X = pd.DataFrame(breast_cancer.data, columns=breast_cancer.feature_names)
+-y = pd.Categorical.from_codes(breast_cancer.target, breast_cancer.target_names)
++df = pd.read_csv("new_data.csv")
++X = df.drop(columns=["Target"])   # inputs (step 7)
++y = df["Target"]                  # answer (step 7)</code></pre>
+      </div>
+      <div class="card"><h3>Explainer</h3>
+        <dl class="explain">
+          <dt>pd.read_csv("…")</dt><dd>Reads a CSV file into a table. The text in quotes is the file name, the part you change.</dd>
+          <dt>sep="\t"</dt><dd>The character between columns. <code>"\t"</code> is a tab (like <code>Practice_Data.csv</code>), <code>";"</code> a semicolon.</dd>
+          <dt>encoding="latin1"</dt><dd>Use it if you get a <code>UnicodeDecodeError</code> (special characters like £ or é).</dd>
+          <dt>load_breast_cancer()</dt><dd>Week 2's built-in example dataset. It doesn't read a file, so it's replaced.</dd>
+          <dt>make_classification()</dt><dd>Week 2 also <b>invents</b> random data for Activities 3–5 (lines 139–145, 194–200). Replace it with <code>X_knn, y_knn = X, y</code> and <code>X_svm, y_svm = X, y</code>.</dd>
+        </dl>
+        <div class="tip"><b>File location:</b> keep the CSV <b>next to the script</b>. <code>Week3.py</code> line 25 deliberately works from the script's own folder.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== STEP 6 -->
+<section class="slide" data-step="6" data-color="adapt" data-title="Match names">
+  <div class="inner">
+    <div class="kicker"><span class="num">Step 6</span> Match the names</div>
+    <h1>The renaming trick: make your data look like the original</h1>
+    <p class="lead">Weeks 4 and 6 mention their column names and labels in many places. Instead of changing every one, rename <b>your</b> columns to <b>their</b> names right after loading. Then the rest of the file works unchanged.</p>
+    <div class="grid g2">
+      <div>
+        <div class="codehead">Week4.py · straight after line 16</div>
+<pre class="diff"><code class="py"> data = pd.read_csv('shop_orders.csv')
++data = data.rename(columns={"OrderID": "InvoiceNo",
++                            "Product": "Description",
++                            "Qty":     "Quantity",
++                            "Region":  "Country"})</code></pre>
+        <div class="codehead">Week6.py · straight after line 40: rename AND relabel</div>
+<pre class="diff"><code class="py"> imdb = pd.read_csv('feedback.csv')
++imdb = imdb.rename(columns={"text": "review", "label": "sentiment"})
++imdb['sentiment'] = imdb['sentiment'].map({"pos": "positive",
++                                           "neg": "negative"})</code></pre>
+        <div class="tip"><b>Tested:</b> for Week 4, that one <code>rename</code> was the only change needed to run on differently named order data.</div>
+      </div>
+      <div class="card"><h3>Explainer</h3>
+        <dl class="explain">
+          <dt>.rename(columns={…})</dt><dd>Gives columns new names. The <b>dictionary</b> reads <code>{"current name": "new name"}</code>.</dd>
+          <dt>.map({…})</dt><dd>Swaps each <b>value</b> in a column using a dictionary: here <code>"pos"</code> becomes <code>"positive"</code>.</dd>
+          <dt>Why relabel?</dt><dd>Week 6 uses the words <code>'positive'</code>/<code>'negative'</code> at line 135 (turning them into 1/0), in the word clouds (234–235) and when printing mistakes. Relabelling once fixes all of them.</dd>
+        </dl>
+        <table style="margin-top:12px">
+          <tr><th>File</th><th>Names it expects</th></tr>
+          <tr><td>Week 4</td><td><code>InvoiceNo</code>, <code>Description</code>, <code>Quantity</code>, <code>Country</code></td></tr>
+          <tr><td>Week 6</td><td><code>review</code>, <code>sentiment</code> (values <code>positive</code>/<code>negative</code>)</td></tr>
+          <tr><td>Week 2/3</td><td>None fixed: change <code>X</code>/<code>y</code> or <code>features</code> (step 7)</td></tr>
+        </table>
+        <div class="warn"><b>Watch out:</b> a label missing from the <code>map</code> dictionary becomes a gap (<code>NaN</code>). Include every label.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== STEP 7 -->
+<section class="slide" data-step="7" data-color="adapt" data-title="Columns">
+  <div class="inner">
+    <div class="kicker"><span class="num">Step 7</span> Choose the columns</div>
+    <h1>Tell the model which columns are inputs and which is the answer</h1>
+    <p class="lead">Clustering needs a list of number columns to group by. Classification needs the inputs (<code>X</code>) split from the answer (<code>y</code>).</p>
+    <div class="grid g2">
+      <div>
+        <div class="codehead">Week3.py · line 60 (clustering)</div>
+<pre class="diff"><code class="py">-features = ["Age", "Annual Income (k$)", "Spending Score (1-100)"]
++features = ["Age", "Spend", "Tenure"]
+ X = df[features].copy()</code></pre>
+        <div class="codehead">Week 2 / Template (classification)</div>
+<pre><code class="py">X = df.drop(columns=["Churn", "CustomerID"])  # inputs: drop answer + IDs
+y = df["Churn"]                               # the answer column</code></pre>
+        <div class="tip"><b>Can't remember the exact names?</b> <code>print(df.columns.tolist())</code> and copy them, including capitals, spaces and brackets.</div>
+      </div>
+      <div class="card"><h3>Explainer</h3>
+        <dl class="explain">
+          <dt>[ "a", "b" ]</dt><dd>A <b>list</b>: column names in square brackets, separated by commas.</dd>
+          <dt>df[features]</dt><dd><b>Keeps</b> only the listed columns.</dd>
+          <dt>df.drop(columns=[…])</dt><dd><b>Removes</b> the listed columns. Use it to take the answer and the IDs out of the inputs.</dd>
+          <dt>df["Churn"]</dt><dd>Picks <b>one</b> column: the answer.</dd>
+          <dt>KeyError: 'Churn'</dt><dd>The name is spelt differently in the file.</dd>
+        </dl>
+        <div class="warn"><b>Leave out:</b> ID numbers (they explain nothing), the answer column (for clustering), and anything that gives the answer away (a "cancellation date" when predicting churn).</div>
+        <div class="warn"><b>Week 3 needs at least 3 features</b> as written: its scatter plots use <code>features[1]</code> and <code>features[2]</code> (lines 140, 211). With only 2, use <code>features[0]</code> and <code>features[1]</code>.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== STEP 8 -->
+<section class="slide" data-step="8" data-color="clean" data-title="Clean">
+  <div class="inner">
+    <div class="kicker"><span class="num">Step 8</span> Clean the data</div>
+    <h1>The week datasets were already clean. Yours probably isn't.</h1>
+    <p class="lead">Put the cleaning <b>straight after loading</b>, before the lines that build <code>X</code>, <code>y</code> or <code>features</code> (in <code>Week3.py</code>, after line 53).
+      Only add the steps your first look showed you need.</p>
+    <div class="grid g2">
+      <div>
+        <div class="codehead">Paste after loading: keep only the lines you need</div>
+<pre><code class="py">df = df.drop_duplicates()                       # copied rows
+df = df.drop(columns=["CustomerID"])            # IDs
+df = df.dropna(subset=["Churn"])                # rows with no answer
+
+# numbers stored as text: "£69.43" -> 69.43
+df["Spend"] = pd.to_numeric(df["Spend"].str.replace("£", ""), errors="coerce")
+
+# messy categories: " Male", "MALE" -> "male"
+df["Gender"] = df["Gender"].str.strip().str.lower()
+
+# impossible zeros -> missing (np = numpy)
+df["sc_w"] = df["sc_w"].replace(0, np.nan)
+
+# fill gaps: numbers -> median, text -> most common
+df["Age"] = df["Age"].fillna(df["Age"].median())
+df["City"] = df["City"].fillna(df["City"].mode()[0])
+
+# remove extreme values (IQR rule)
+Q1, Q3 = df["Age"].quantile(0.25), df["Age"].quantile(0.75)
+IQR = Q3 - Q1
+df = df[(df["Age"] &gt;= Q1 - 1.5 * IQR) &amp; (df["Age"] &lt;= Q3 + 1.5 * IQR)]</code></pre>
+      </div>
+      <div>
+        <table>
+          <tr><th>Error / sign</th><th>Fix with</th></tr>
+          <tr><td><code>could not convert string to float: '£69.43'</code></td><td><code>str.replace</code> + <code>pd.to_numeric</code></td></tr>
+          <tr><td><code>could not convert string to float: 'Leeds'</code></td><td><code>pd.get_dummies</code> (step 9)</td></tr>
+          <tr><td><code>Input X contains NaN</code></td><td><code>fillna</code> / <code>dropna</code></td></tr>
+          <tr><td><code>describe()</code> shows 0 or 999 where impossible</td><td><code>replace(0, np.nan)</code> / IQR filter</td></tr>
+        </table>
+        <div class="card" style="margin-top:12px"><h3>Explainer</h3>
+          <dl class="explain">
+            <dt>df = df.…</dt><dd>Table actions give back a <b>new</b> table. Without <code>df =</code> nothing changes.</dd>
+            <dt>median()</dt><dd>The middle value. Extreme values don't drag it, which makes it safer than the average.</dd>
+            <dt>mode()[0]</dt><dd>The most common value; <code>[0]</code> takes the first if there's a tie.</dd>
+            <dt>errors="coerce"</dt><dd>Anything that can't become a number becomes a gap instead of crashing.</dd>
+            <dt>&amp; ~ |</dt><dd>AND, NOT, OR for row filters. Each condition goes in its own brackets.</dd>
+          </dl>
+        </div>
+        <div class="tip"><b>Tested:</b> <code>Week3.py</code> on a messy customer file failed with <code>'£69.43'</code> until this block was added, then ran end to end. Keep a <b>cleaning log</b> (what, why, how many rows) for your report.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== STEP 9 -->
+<section class="slide" data-step="9" data-color="clean" data-title="Prepare">
+  <div class="inner">
+    <div class="kicker"><span class="num">Step 9</span> Convert to numbers &amp; prepare</div>
+    <h1>Encode, split, then scale</h1>
+    <p class="lead">Models only understand numbers, need a fair test set, and (for distance-based methods) columns on the same scale.
+      <b>The order matters:</b> split first, then fit the scaler on the training part only.</p>
+    <div class="grid g2">
+      <div>
+<pre><code class="py">from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.model_selection import train_test_split
+
+# 1. text INPUT columns -> 0/1 columns
+X = pd.get_dummies(X, drop_first=True, dtype=int)
+
+# 2. text ANSWER -> numbers (skip if already numbers)
+if not pd.api.types.is_numeric_dtype(y):
+    y = LabelEncoder().fit_transform(y)          # "No"=0, "Yes"=1
+
+# 3. hold back 20% as a fair test (classification)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y)
+
+# 4. same scale: learn from TRAIN, apply to TEST
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)</code></pre>
+        <div class="tip"><b>Clustering:</b> no <code>y</code> and no split. Just <code>X_scaled = StandardScaler().fit_transform(X)</code>, which <code>Week3.py</code> already does (lines 68–69).</div>
+      </div>
+      <div class="card"><h3>Explainer</h3>
+        <dl class="explain">
+          <dt>get_dummies</dt><dd>Turns each category into a 0/1 column (<code>City</code> becomes <code>City_Leeds</code> and <code>City_York</code>). <code>drop_first</code> drops the one implied by the others.</dd>
+          <dt>LabelEncoder</dt><dd>Numbers the answer labels <b>alphabetically</b>. For your own order use <code>.map({"No": 0, "Yes": 1})</code>.</dd>
+          <dt>train_test_split</dt><dd>Gives back <b>four</b> things, in this order: <code>X_train, X_test, y_train, y_test</code>.</dd>
+          <dt>stratify=y</dt><dd>Keeps the class mix the same in both parts. It fails if a class has only 1 row, and isn't used for predicting numbers.</dd>
+          <dt>random_state=42</dt><dd>The same random split every run, so your results are repeatable.</dd>
+          <dt>fit_transform / transform</dt><dd><b>fit</b> = learn (each column's average and spread); <b>transform</b> = apply. Fitting on test data is <b>data leakage</b>.</dd>
+        </dl>
+        <div class="warn"><b>Week 2 doesn't scale.</b> KNN and SVM normally need it, but test both ways: on the phone data, unscaled KNN scored <span class="result">0.92</span> and scaled KNN <span class="result">0.50</span>, because the biggest-number column (RAM) was also the most useful one.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== STEP 10 -->
+<section class="slide" data-step="10" data-color="model" data-title="Models">
+  <div class="inner">
+    <div class="kicker"><span class="num">Step 10</span> Select the models &amp; settings</div>
+    <h1>Keep the models, but check the numbers inside them</h1>
+    <p class="lead">The original settings were chosen for the original data. These are the ones that usually need changing for yours.</p>
+    <table>
+      <tr><th>File · line</th><th>Original</th><th>Change when…</th><th>To</th></tr>
+      <tr><td>W2 · 93–96, 118–121</td><td><code>f1_score(y_test, pred)</code></td><td>More than 2 classes</td><td><code>f1_score(y_test, pred, average="macro")</code></td></tr>
+      <tr><td>W2 · 103–108</td><td><code>RandomForestClassifier(max_depth=1, …)</code></td><td>You want a real model, not the teaching comparison</td><td>Remove <code>max_depth=1</code> (phone data: <span class="result">0.61 → ~0.88</span>)</td></tr>
+      <tr><td>W3 · 125</td><td><code>k = 5</code></td><td>Always: read the k table first</td><td>The best k (new customer file: <span class="result">4</span>)</td></tr>
+      <tr><td>W3 · 247</td><td><code>DBSCAN(eps=0.7, min_samples=5)</code></td><td>1 cluster, or nearly all noise (<code>-1</code>)</td><td>Lower <code>eps</code> / raise <code>eps</code></td></tr>
+      <tr><td>W4 · 141</td><td><code>apriori(…, min_support=0.05)</code></td><td>No rules found</td><td><code>0.02</code> or <code>0.01</code></td></tr>
+      <tr><td>W6 · 94</td><td><code>imdb.sample(2000, …)</code></td><td>Fewer than 2,000 texts (it crashes)</td><td><code>imdb.sample(min(2000, len(imdb)), random_state=42)</code></td></tr>
+      <tr><td>W6 · 110</td><td><code>MAX_FEAT = 5000</code></td><td>Small text data</td><td>1,000–2,000</td></tr>
+      <tr><td>W6 · 174</td><td><code>LogisticRegression(max_iter=400)</code></td><td>A <code>ConvergenceWarning</code> appears</td><td><code>max_iter=1000</code></td></tr>
+    </table>
+    <div class="grid g2" style="margin-top:16px">
+      <div>
+        <div class="codehead">Adding a model that isn't in the file: always the same 5 lines</div>
+<pre><code class="py">from sklearn.ensemble import RandomForestClassifier   # 1 import
+model = RandomForestClassifier(random_state=42)       # 2 create (+ settings)
+model.fit(X_train, y_train)                           # 3 learn
+y_pred = model.predict(X_test)                        # 4 predict
+print(accuracy_score(y_test, y_pred))                 # 5 score</code></pre>
+      </div>
+      <div class="card"><h3>Choosing which models</h3>
+        <ul>
+          <li>Always include <b>one simple, explainable</b> model (Logistic Regression or a shallow Decision Tree). On the phone data it <b>won</b>.</li>
+          <li>Add <b>one or two stronger</b> ones (Random Forest, SVM, a Week 2 ensemble).</li>
+          <li>Many irrelevant columns? Avoid KNN. Need to explain it? Avoid SVM and ensembles.</li>
+          <li><b>Predicting a number:</b> swap in <code>LinearRegression</code> / <code>RandomForestRegressor</code>, remove <code>stratify</code>, and score with <code>r2_score</code>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== STEP 11 -->
+<section class="slide" data-step="11" data-color="model" data-title="Run &amp; fix">
+  <div class="inner">
+    <div class="kicker"><span class="num">Step 11</span> Run, read the error, fix, repeat</div>
+    <h1>Errors are instructions: read the last line</h1>
+    <p class="lead">Run the file. If it stops, the <b>last line</b> of the red text says what's wrong; the line just above it says <b>where</b>. Fix that one thing and run again.
+      ✓ = an error seen while testing the week files on new data.</p>
+    <table>
+      <tr><th>Last line of the error</th><th>What it means</th><th>Fix</th></tr>
+      <tr><td><code>FileNotFoundError</code></td><td>Wrong file name or folder</td><td>Check the spelling and <code>.csv</code>; put the file next to the script</td></tr>
+      <tr><td><code>KeyError: 'Age'</code></td><td>Column name spelt differently</td><td><code>print(df.columns.tolist())</code> and copy it exactly</td></tr>
+      <tr><td>✓ <code>could not convert string to float: '£69.43'</code></td><td>Text where a number is needed</td><td><code>pd.to_numeric</code> / <code>get_dummies</code> (steps 8–9)</td></tr>
+      <tr><td><code>Input X contains NaN</code></td><td>Gaps reached the model</td><td><code>fillna</code> / <code>dropna</code></td></tr>
+      <tr><td>✓ <code>Target is multiclass but average='binary'</code></td><td>F1 with more than 2 classes</td><td><code>average="macro"</code></td></tr>
+      <tr><td>✓ <code>Cannot take a larger sample than population</code></td><td>Week 6's <code>sample(2000)</code> on small data</td><td><code>sample(min(2000, len(imdb)))</code></td></tr>
+      <tr><td>✓ <code>'DataFrame' object has no attribute 'map'</code></td><td>Older pandas (Week 4)</td><td><code>.applymap(hot_encode)</code></td></tr>
+      <tr><td>✓ <code>least populated classes in y have only 1 member</code></td><td><code>stratify</code> with a 1-row class</td><td>Remove that class, or drop <code>stratify</code></td></tr>
+      <tr><td>✓ <code>frequent itemsets is empty</code></td><td>apriori found nothing</td><td>Lower <code>min_support</code></td></tr>
+      <tr><td><code>ModuleNotFoundError: No module named 'fcmeans'</code></td><td>Package not installed</td><td><code>python -m pip install fuzzy-c-means</code></td></tr>
+      <tr><td><code>boxplot() got an unexpected keyword argument 'tick_labels'</code></td><td>Older matplotlib (Week 2)</td><td>Use <code>labels=</code></td></tr>
+    </table>
+    <div class="warn"><b>Known bug to fix first:</b> <code>Week2.py</code> lines 305–312 aren't indented, so only "Soft Voting" is scored. Indent them by 4 spaces so they're inside the <code>for</code> loop.</div>
+  </div>
+</section>
+
+<!-- ===================================================================== STEP 12 -->
+<section class="slide" data-step="12" data-color="evaluate" data-title="Evaluate">
+  <div class="inner">
+    <div class="kicker"><span class="num">Step 12</span> Evaluate &amp; interpret</div>
+    <h1>Pick the right score, then update the outputs that still name the old data</h1>
+    <div class="grid g2">
+      <div>
+        <table>
+          <tr><th>Type</th><th>Score with</th><th>Remember</th></tr>
+          <tr><td>Classification</td><td>accuracy, F1, <code>classification_report</code>, <code>confusion_matrix</code></td><td>Beat the <b>baseline</b> (always guessing the most common class: 25% for 4 equal classes). Imbalanced? Use F1 and recall.</td></tr>
+          <tr><td>Clustering</td><td>elbow (<code>inertia_</code>), <code>silhouette_score</code></td><td>Can you <b>name</b> each group from its averages? Around 0.06 = no natural groups, which is a finding.</td></tr>
+          <tr><td>Association</td><td>support, confidence, lift</td><td>Lift above 1 = a real link. "Bought together", not "causes".</td></tr>
+          <tr><td>Text</td><td>accuracy, <code>classification_report</code></td><td>Read the misclassified examples and the top words.</td></tr>
+        </table>
+        <div class="codehead" style="margin-top:14px">The interpretation lines (these update themselves)</div>
+<pre><code class="py"># clusters described in original units (Week 3, line 132)
+df.groupby("kmeans_cluster")[features].mean().round(1)
+
+# which columns matter most (random forest)
+pd.Series(model.feature_importances_, index=X.columns).sort_values()</code></pre>
+      </div>
+      <div>
+        <div class="codehead">Week3.py · lines 142–144 (and 213–215): typed-in labels</div>
+<pre class="diff"><code class="py">-plt.title("KMeans Clustering Segments (K=5)")
+-plt.xlabel("Annual Income (k$)")
+-plt.ylabel("Spending Score (1-100)")
++plt.title(f"KMeans Clustering Segments (K={k})")
++plt.xlabel(features[1])
++plt.ylabel(features[2])</code></pre>
+        <div class="card"><h3>Explainer</h3>
+          <dl class="explain">
+            <dt>groupby(…).mean()</dt><dd>Splits rows into the clusters and averages each one: "group 2 = young, high spending".</dd>
+            <dt>feature_importances_</dt><dd>How much each column helped the trees. Use it for the business recommendation.</dd>
+            <dt>f"…{k}…"</dt><dd>An <b>f-string</b>: the value of <code>k</code> is slotted into the text, so the title stays correct.</dd>
+          </dl>
+        </div>
+        <div class="warn"><b>Charts lie if you don't relabel:</b> Week 3's axis titles are typed in, so they'd still say "Annual Income" on your data. Also change "France" in Week 4's printout (line 155).</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== STEP 13 -->
+<section class="slide" data-step="13" data-color="evaluate" data-title="Write up">
+  <div class="inner">
+    <div class="kicker"><span class="num">Step 13</span> Write up</div>
+    <h1>The write-up earns the marks</h1>
+    <p class="lead">Your notes from steps 1, 3 and 8 are already most of the report. Each section answers one question.</p>
+    <div class="grid g2">
+      <div class="card why"><h3>Report structure</h3>
+        <ol>
+          <li><b>Business problem:</b> your sentence from step 1.</li>
+          <li><b>Data issues:</b> what the first look found and what you did, <b>and why</b> (your cleaning log).</li>
+          <li><b>Techniques:</b> why this type of analysis (step 3), and why these models (step 10).</li>
+          <li><b>Results:</b> the scores with screenshots, compared with the baseline.</li>
+          <li><b>Recommendation:</b> what the business should do (top features, segments, rules).</li>
+          <li><b>Limitations:</b> small data, imbalance, Week 6's leakage, what you'd try next.</li>
+        </ol>
+      </div>
+      <div>
+        <div class="card"><h3>Sentence templates</h3>
+          <p>"<i>I chose <b>[model]</b> because <b>[strength]</b>. Its weakness is <b>[weakness]</b>, so I <b>[what you did]</b>.</i>"</p>
+          <p>"<i>I filled missing ages with the <b>median</b> because the column had an outlier (999), and the median isn't affected by extreme values.</i>"</p>
+          <p>"<i>The data has a labelled outcome with four balanced categories, so <b>classification</b> is appropriate and accuracy is a fair measure.</i>"</p>
+        </div>
+        <div class="tip"><b>Screenshot as you go:</b> the first-look outputs, the cleaning log, the comparison table, a chart, and the classification report or cluster profiles.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== CARDS -->
+<section class="slide" data-step="R" data-color="ref" data-title="Week cards">
+  <div class="inner">
+    <div class="kicker"><span class="num">Reference</span> Week 2 change card</div>
+    <h1><code style="font-size:.85em">Week2.py</code>: classification &amp; ensembles</h1>
+    <div class="grid g2">
+      <div>
+<pre class="diff"><code class="py"># lines 41-55: your data instead of the built-in set
+-breast_cancer = load_breast_cancer()
++df = pd.read_csv("Practice_Data.csv", sep="\t")
++X = df.drop(columns=["price_range"])
++y = df["price_range"]
+# line 57: no encoder used, so this would fail
+-print("Target classes:", encoder.classes_)
++print("Target classes:", sorted(y.unique()))
+# lines 93-96 and 118-121 (shown on one line): more than 2 classes
+-boost_f1 = f1_score(y_test, boost_predictions)
++boost_f1 = f1_score(y_test, boost_predictions, average="macro")
+# lines 139-145 and 194-200: real data, not invented data
+-X_knn, y_knn = make_classification(n_samples=1000, ...)
++X_knn, y_knn = X, y
+-X_svm, y_svm = make_classification(n_samples=1000, ...)
++X_svm, y_svm = X, y
+# lines 305-312: indent into the for loop (known bug)
+-results.append(scores)
++    results.append(scores)</code></pre>
+      </div>
+      <div>
+        <div class="card"><h3>Tested on the phone price data (4 classes)</h3>
+          <table>
+            <tr><th>Model</th><th>Score</th></tr>
+            <tr><td>Soft voting (5 SVMs)</td><td class="result">0.960</td></tr>
+            <tr><td>Individual SVMs, degree 1–5</td><td class="result">0.948–0.957</td></tr>
+            <tr><td>Hard voting (5 KNNs)</td><td class="result">0.930</td></tr>
+            <tr><td>Bagged KNN</td><td class="result">0.923</td></tr>
+            <tr><td>Random Forest, <code>max_depth=1</code></td><td class="result">0.61</td></tr>
+            <tr><td>AdaBoost, one-question trees</td><td class="result">0.52</td></tr>
+          </table>
+          <p class="muted" style="margin:8px 0 0">Cross-validated means for activities 3–5; test-set accuracy for activities 1–2.</p>
+        </div>
+        <div class="warn"><b>Week 2 is a teaching experiment.</b> Its one-question trees (<code>max_depth=1</code>) make AdaBoost and Random Forest look weak. Say which version you used, or remove <code>max_depth=1</code>.</div>
+        <div class="tip"><b>X must be all numbers with no gaps.</b> Add <code>pd.get_dummies</code> and the cleaning from step 8 before the split.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-step="R" data-color="ref" data-title="Week cards">
+  <div class="inner">
+    <div class="kicker"><span class="num">Reference</span> Week 3 change card</div>
+    <h1><code style="font-size:.85em">Week3.py</code>: clustering</h1>
+    <div class="grid g2">
+      <div>
+<pre class="diff"><code class="py"># line 32
+-df = pd.read_csv("Mall_Customers.csv")
++df = pd.read_csv("customers.csv")
+# after line 53: NEW cleaning block (step 8)
++df = df.drop_duplicates()
++df["Spend"] = pd.to_numeric(df["Spend"].str.replace("£", ""), errors="coerce")
++df["Age"] = df["Age"].fillna(df["Age"].median())
+# line 60: your number columns (no IDs, no answer)
+-features = ["Age", "Annual Income (k$)", "Spending Score (1-100)"]
++features = ["Age", "Spend", "Tenure"]
+# line 125: the k chosen from the table at line 118
+-k = 5
++k = 4
+# lines 142-144 and 213-215: typed-in chart labels
+-plt.xlabel("Annual Income (k$)")
++plt.xlabel(features[1])
+# line 247: only if DBSCAN gives 1 cluster / all noise
+ dbscan = DBSCAN(eps=0.7, min_samples=5)</code></pre>
+      </div>
+      <div>
+        <div class="card"><h3>Tested on a messy customer file</h3>
+          <ul>
+            <li>Failed with <code>could not convert string to float: '£69.43'</code> until the cleaning block was added.</li>
+            <li>The best silhouette was at <span class="result">k = 4 (0.292)</span>, not 5, so line 125 changes.</li>
+            <li>Fuzzy C-Means, DBSCAN and Agglomerative then all ran unchanged.</li>
+          </ul>
+        </div>
+        <div class="card" style="margin-top:12px"><h3>Explainer</h3>
+          <dl class="explain">
+            <dt>k</dt><dd>The number of groups. K-Means, Fuzzy C-Means and Agglomerative all use the same <code>k</code>.</dd>
+            <dt>eps</dt><dd>DBSCAN: how close points must be to count as neighbours.</dd>
+            <dt>-1</dt><dd>DBSCAN's label for noise (points in no group).</dd>
+          </dl>
+        </div>
+        <div class="tip"><b>fuzzy-c-means won't install?</b> Comment out line 20 and lines 149–231; the rest still runs.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-step="R" data-color="ref" data-title="Week cards">
+  <div class="inner">
+    <div class="kicker"><span class="num">Reference</span> Week 4 change card</div>
+    <h1><code style="font-size:.85em">Week4.py</code>: association rules</h1>
+    <div class="grid g2">
+      <div>
+<pre class="diff"><code class="py"># line 16: your file + the renaming trick
+-data = pd.read_csv('Week 4/Online_Retail.csv')
++data = pd.read_csv('shop_orders.csv')
++data = data.rename(columns={"OrderID": "InvoiceNo", "Product": "Description",
++                            "Qty": "Quantity", "Region": "Country"})
+# no quantity column? each row = one item bought
++data['Quantity'] = 1
+# line 57: delete if your IDs can contain the letter C
+ data = data[~data['InvoiceNo'].str.contains('C')]
+# line 76: a country that exists in YOUR data
+-basket_France = (data[data['Country'] == "France"]
++basket_France = (data[data['Country'] == "Germany"]
+# lines 120-123: pandas older than 2.1
+-basket_encoded_France = basket_France.map(hot_encode)
++basket_encoded_France = basket_France.applymap(hot_encode)
+# line 141: no rules found?
+-frq_items_France = apriori(basket_France, min_support=0.05, use_colnames=True)
++frq_items_France = apriori(basket_France, min_support=0.02, use_colnames=True)
+# line 156: show every column that matters
+-print(rules_FR.head(10))
++print(rules_FR[['antecedents', 'consequents', 'support', 'confidence', 'lift']].head(10))</code></pre>
+      </div>
+      <div>
+        <div class="card"><h3>Explainer: building the basket (lines 76–79)</h3>
+          <dl class="explain">
+            <dt>groupby([…])</dt><dd>Groups rows by invoice <b>and</b> item.</dd>
+            <dt>['Quantity'].sum()</dt><dd>The total of each item on each invoice.</dd>
+            <dt>.unstack()</dt><dd>Turns items into <b>columns</b>: one row per basket.</dd>
+            <dt>.fillna(0)</dt><dd>Item not in that basket = 0.</dd>
+            <dt>hot_encode</dt><dd>Any quantity becomes 1 (bought) or 0 (not bought).</dd>
+            <dt>apriori</dt><dd>Finds item combinations in at least <code>min_support</code> of baskets.</dd>
+            <dt>association_rules</dt><dd>Turns them into "if A then B" rules with support, confidence and lift.</dd>
+          </dl>
+        </div>
+        <div class="tip"><b>Tested:</b> on order data with different column names, the <code>rename</code> was the only change needed. Countries missing from your data just give empty <code>(0, 0)</code> tables, which you can delete (lines 83–101).</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-step="R" data-color="ref" data-title="Week cards">
+  <div class="inner">
+    <div class="kicker"><span class="num">Reference</span> Week 6 change card</div>
+    <h1><code style="font-size:.85em">Week6.py</code>: text classification</h1>
+    <div class="grid g2">
+      <div>
+<pre class="diff"><code class="py"># line 32: keep negation words (strongly recommended)
+-stop_words = set(stopwords.words('english'))
++stop_words = set(stopwords.words('english')) - {"not", "no", "nor"}
+# line 40: your file, renamed and relabelled
+-imdb = pd.read_csv('Week 6/IMDB_Dataset.csv')
++imdb = pd.read_csv('feedback.csv')
++imdb = imdb.rename(columns={"text": "review", "label": "sentiment"})
++imdb['sentiment'] = imdb['sentiment'].map({"pos": "positive", "neg": "negative"})
+# line 94: crashes on fewer than 2,000 rows
+-imdb_sample = imdb.sample(2000, random_state=42).copy()
++imdb_sample = imdb.sample(min(2000, len(imdb)), random_state=42).copy()
+# line 110: smaller vocabulary for small data
+-MAX_FEAT = 5000
++MAX_FEAT = 2000
+# line 135: unchanged, thanks to the relabelling above
+ y = imdb['sentiment'].map({'positive': 1, 'negative': 0}).values</code></pre>
+      </div>
+      <div>
+        <div class="card"><h3>Why line 32 matters (tested)</h3>
+          <table>
+            <tr><th>Review</th><th>Cleaned</th></tr>
+            <tr><td>"Not good, only 2 stars"</td><td class="result">good star</td></tr>
+            <tr><td>…keeping negations</td><td class="result">not good star</td></tr>
+          </table>
+          <p class="muted" style="margin:8px 0 0">The default cleaning reverses the meaning. Keeping "not" lets the word pairs (<code>ngram_range=(1, 2)</code>) capture "not good".</p>
+        </div>
+        <div class="card" style="margin-top:12px"><h3>Explainer</h3>
+          <dl class="explain">
+            <dt>.apply(clean_text)</dt><dd>Runs the cleaning function on every review (line 100).</dd>
+            <dt>CountVectorizer</dt><dd>Word counts: one column per word.</dd>
+            <dt>TfidfVectorizer</dt><dd>Like counts, but words found in almost every review count for less.</dd>
+            <dt>nltk.download</dt><dd>Downloads word lists the first time; <b>needs the internet</b>, so run it before the exam.</dd>
+          </dl>
+        </div>
+        <div class="warn"><b>More than 2 labels?</b> Map them to 0/1/2 at line 135 and use <code>average="macro"</code>. The word clouds and <code>show_top_coef</code> assume two classes.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== WORKED EXAMPLE -->
+<section class="slide" data-step="R" data-color="ref" data-title="Worked example">
+  <div class="inner">
+    <div class="kicker"><span class="num">Worked example</span> All 13 steps on one brief</div>
+    <h1>"Predict a phone's price band, and say what drives it"</h1>
+    <table>
+      <tr><th>Step</th><th>Decision</th><th>Result</th></tr>
+      <tr><td>1 Understand</td><td>"Predict" + a band = <b>classification</b></td><td></td></tr>
+      <tr><td>2 First look</td><td><code>Practice_Data.csv</code> uses tabs: <code>sep="\t"</code></td><td>2,000 rows, 21 columns, no gaps or duplicates, 4 × 500 balanced</td></tr>
+      <tr><td>3 Classify</td><td>One row = one phone; answer = 4 categories</td><td>Classification; accuracy is fair; baseline <span class="result">25%</span></td></tr>
+      <tr><td>4 Pick</td><td>Template 3A for the comparison, Week 2 for ensembles</td><td></td></tr>
+      <tr><td>5–7 Load, names, columns</td><td><code>X = df.drop(columns=["price_range"])</code>, <code>y = df["price_range"]</code></td><td>No renaming needed</td></tr>
+      <tr><td>8 Clean</td><td><code>sc_w</code> (screen width) is 0 for 180 phones, which is impossible: <code>replace(0, np.nan)</code>, then median</td><td>Cleaning log entry</td></tr>
+      <tr><td>9 Prepare</td><td>Split 80/20 stratified; scale on the training data</td><td>1,600 train / 400 test</td></tr>
+      <tr><td>10 Models</td><td>Simple + strong; <code>average="macro"</code> (4 classes)</td><td>Logistic Regression <span class="result">0.963</span> · Random Forest 0.895 · Decision Tree 0.830 · KNN 0.527 · Week 2 soft voting <span class="result">0.960</span></td></tr>
+      <tr><td>11 Fix</td><td>Week 2: multiclass F1 error and the indentation bug</td><td>Both fixed</td></tr>
+      <tr><td>12 Evaluate</td><td>Confusion matrix + feature importance</td><td><b>RAM</b> by far the strongest driver, then battery and screen pixels</td></tr>
+      <tr><td>13 Write up</td><td>"Logistic Regression: as accurate as the ensembles, faster and explainable. RAM drives price band most…"</td><td>Report</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ===================================================================== CHEAT SHEET -->
+<section class="slide" data-step="R" data-color="ref" data-title="Cheat sheet">
+  <div class="inner">
+    <div class="kicker"><span class="num">Cheat sheet</span> One page to keep open</div>
+    <h1>My new data has… → change this</h1>
+    <div class="grid g2">
+      <table>
+        <tr><th>My new data…</th><th>Change</th></tr>
+        <tr><td>is a different file</td><td><code>pd.read_csv("new.csv")</code></td></tr>
+        <tr><td>is tab / semicolon separated</td><td><code>sep="\t"</code> / <code>sep=";"</code></td></tr>
+        <tr><td>has different column names (Week 4/6)</td><td><code>df.rename(columns={...})</code></td></tr>
+        <tr><td>has different label words</td><td><code>df["col"].map({...})</code></td></tr>
+        <tr><td>has different columns to use</td><td><code>features = [...]</code> / <code>X</code>, <code>y</code></td></tr>
+        <tr><td>has numbers stored as text</td><td><code>str.replace</code> + <code>pd.to_numeric</code></td></tr>
+        <tr><td>has gaps</td><td><code>fillna(median / mode)</code></td></tr>
+        <tr><td>has text categories</td><td><code>pd.get_dummies</code></td></tr>
+      </table>
+      <table>
+        <tr><th>My new data…</th><th>Change</th></tr>
+        <tr><td>has very different scales</td><td><code>StandardScaler</code> (Week 2 lacks it)</td></tr>
+        <tr><td>has more than 2 classes</td><td><code>average="macro"</code></td></tr>
+        <tr><td>needs a different number of clusters</td><td><code>k = ...</code> (Week 3 line 125)</td></tr>
+        <tr><td>gives DBSCAN 1 cluster / all noise</td><td><code>eps=...</code></td></tr>
+        <tr><td>gives no association rules</td><td><code>min_support=0.02</code></td></tr>
+        <tr><td>is under 2,000 texts</td><td><code>sample(min(2000, len(imdb)))</code></td></tr>
+        <tr><td>needs "not" kept</td><td>Week 6 line 32 stopwords</td></tr>
+        <tr><td>makes charts say the old names</td><td><code>plt.xlabel</code> / <code>plt.title</code> text</td></tr>
+      </table>
+    </div>
+    <div class="tip" style="margin-top:16px"><b>Leave alone:</b> <code>fit</code>, <code>predict</code>, <code>fit_predict</code>, the score functions, <code>print</code> and <code>plt.show</code>. They work for any data.</div>
+  </div>
+</section>
+
+</main>
+
+<footer class="nav">
+  <button id="prev" aria-label="Previous slide">← Back</button>
+  <span class="hint"><kbd>←</kbd> <kbd>→</kbd> to move · click the numbered steps at the top to jump</span>
+  <button id="next" aria-label="Next slide">Next →</button>
+</footer>
+
+<script>
+(function () {
+  // --- tiny Python highlighter (comments, strings, numbers, keywords, calls) ---
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const TOKEN = /(#.*$)|([rfb]?"(?:[^"\\]|\\.)*"|[rfb]?'(?:[^'\\]|\\.)*')|\b(\d+(?:\.\d+)?)\b|\b(import|from|as|for|in|if|else|elif|def|return|True|False|None|not|and|or|lambda|try|except)\b|\b([A-Za-z_]\w*)(?=\()/g;
+  function highlight(line) {
+    let out = "", last = 0, m;
+    TOKEN.lastIndex = 0;
+    while ((m = TOKEN.exec(line))) {
+      out += esc(line.slice(last, m.index));
+      const t = esc(m[0]);
+      const cls = m[1] ? "c" : m[2] ? "s" : m[3] ? "n" : m[4] ? "k" : "f";
+      out += `<span class="${cls}">${t}</span>`;
+      last = TOKEN.lastIndex;
+    }
+    return out + esc(line.slice(last));
+  }
+  document.querySelectorAll("pre code.py").forEach(code => {
+    const isDiff = code.parentElement.classList.contains("diff");
+    const lines = code.textContent.replace(/\n$/, "").split("\n");
+    code.innerHTML = lines.map(line => {
+      if (!isDiff) return highlight(line);
+      const mark = line[0];
+      const body = (mark === "-" || mark === "+" || mark === " ") ? line.slice(1) : line;
+      const cls = mark === "-" ? "del" : mark === "+" ? "add" : "";
+      return `<span class="ln ${cls}">${highlight(body) || " "}</span>`;
+    }).join(isDiff ? "" : "\n");
+  });
+
+  // --- deck navigation ---
+  const slides = Array.from(document.querySelectorAll(".slide"));
+  const colors = { understand: "--understand", adapt: "--adapt", clean: "--clean", model: "--model", evaluate: "--evaluate", ref: "--ref" };
+  const tracker = document.getElementById("tracker");
+  const steps = [];
+  slides.forEach((s, i) => {
+    const step = s.dataset.step;
+    if (step !== "0" && step !== "R" && !steps.find(x => x.step === step)) {
+      steps.push({ step, index: i, title: s.dataset.title, color: s.dataset.color });
+    }
+  });
+  const refIndex = slides.findIndex(s => s.dataset.step === "R");
+  steps.forEach(st => {
+    const b = document.createElement("button");
+    b.innerHTML = `${st.step}<span class="lbl">${st.title}</span>`;
+    b.title = `Step ${st.step}: ${st.title.replace("&amp;", "&")}`;
+    b.onclick = () => go(st.index);
+    b.dataset.step = st.step;
+    tracker.appendChild(b);
+  });
+  const refBtn = document.createElement("button");
+  refBtn.innerHTML = `Ref<span class="lbl">Cards &amp; examples</span>`;
+  refBtn.title = "Week change cards, worked example, cheat sheet";
+  refBtn.dataset.step = "R";
+  refBtn.onclick = () => go(refIndex);
+  tracker.appendChild(refBtn);
+
+  const journey = document.getElementById("journey");
+  steps.forEach(st => {
+    const a = document.createElement("a");
+    a.href = `#${st.index + 1}`;
+    a.style.setProperty("--c", `var(${colors[st.color]})`);
+    const head = slides[st.index].querySelector("h1").textContent;
+    a.innerHTML = `<b>Step ${st.step} · ${st.title}</b>${head}`;
+    a.onclick = e => { e.preventDefault(); go(st.index); };
+    journey.appendChild(a);
+  });
+  const refLink = document.createElement("a");
+  refLink.href = `#${refIndex + 1}`;
+  refLink.style.setProperty("--c", "var(--ref)");
+  refLink.innerHTML = "<b>Reference</b>Week 2 / 3 / 4 / 6 change cards, a worked example and a cheat sheet";
+  refLink.onclick = e => { e.preventDefault(); go(refIndex); };
+  journey.appendChild(refLink);
+
+  let current = 0;
+  function go(i) {
+    current = Math.max(0, Math.min(slides.length - 1, i));
+    slides.forEach((s, j) => s.classList.toggle("active", j === current));
+    const s = slides[current];
+    document.documentElement.style.setProperty("--accent", `var(${colors[s.dataset.color] || "--understand"})`);
+    const stepNum = parseInt(s.dataset.step, 10);
+    tracker.querySelectorAll("button").forEach(b => {
+      const bs = b.dataset.step;
+      b.classList.toggle("current", bs === s.dataset.step);
+      b.classList.toggle("done", bs !== "R" && (s.dataset.step === "R" || (!isNaN(stepNum) && parseInt(bs, 10) < stepNum)));
+    });
+    document.getElementById("counter").textContent = `${current + 1} / ${slides.length}`;
+    document.getElementById("progress").style.width = `${((current + 1) / slides.length) * 100}%`;
+    s.scrollTop = 0;
+    try { if (location.hash !== `#${current + 1}`) history.replaceState(null, "", `#${current + 1}`); } catch (e) { /* sandboxed viewer */ }
+  }
+  document.getElementById("prev").onclick = () => go(current - 1);
+  document.getElementById("next").onclick = () => go(current + 1);
+  document.addEventListener("keydown", e => {
+    if (["ArrowRight", "PageDown", " "].includes(e.key)) { e.preventDefault(); go(current + 1); }
+    else if (["ArrowLeft", "PageUp"].includes(e.key)) { e.preventDefault(); go(current - 1); }
+    else if (e.key === "Home") go(0);
+    else if (e.key === "End") go(slides.length - 1);
+  });
+  window.addEventListener("hashchange", () => go((parseInt(location.hash.slice(1), 10) || 1) - 1));
+  go((parseInt(location.hash.slice(1), 10) || 1) - 1);
+})();
+</script>
+</body>
+</html>
