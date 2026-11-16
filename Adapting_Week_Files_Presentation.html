@@ -958,6 +958,16 @@ pd.Series(model.feature_importances_, index=X.columns).sort_values()</code></pre
   refLink.onclick = e => { e.preventDefault(); go(refIndex); };
   journey.appendChild(refLink);
 
+  // Bookmarks: "#N" = slide N. Build ABSOLUTE URLs from the page's own address, because
+  // viewers such as htmlpreview.github.io inject a <base> tag that would otherwise make
+  // a bare "#N" point at a different site (and the browser rejects that update).
+  const pageUrl = () => location.href.split("#")[0];
+  const bookmarkUrl = i => `${pageUrl()}#${i + 1}`;
+  function slideFromBookmark() {
+    const n = parseInt(decodeURIComponent(location.hash.slice(1)), 10);
+    return isNaN(n) ? 0 : n - 1;              // no or unreadable bookmark: first slide
+  }
+
   let current = 0;
   function go(i) {
     current = Math.max(0, Math.min(slides.length - 1, i));
@@ -973,7 +983,10 @@ pd.Series(model.feature_importances_, index=X.columns).sort_values()</code></pre
     document.getElementById("counter").textContent = `${current + 1} / ${slides.length}`;
     document.getElementById("progress").style.width = `${((current + 1) / slides.length) * 100}%`;
     s.scrollTop = 0;
-    try { if (location.hash !== `#${current + 1}`) history.replaceState(null, "", `#${current + 1}`); } catch (e) { /* sandboxed viewer */ }
+    if (location.hash !== `#${current + 1}`) {
+      try { history.replaceState(null, "", bookmarkUrl(current)); }   // update the bookmark
+      catch (e) { /* a sandboxed viewer may forbid it; slides still work */ }
+    }
   }
   document.getElementById("prev").onclick = () => go(current - 1);
   document.getElementById("next").onclick = () => go(current + 1);
@@ -983,8 +996,15 @@ pd.Series(model.feature_importances_, index=X.columns).sort_values()</code></pre
     else if (e.key === "Home") go(0);
     else if (e.key === "End") go(slides.length - 1);
   });
-  window.addEventListener("hashchange", () => go((parseInt(location.hash.slice(1), 10) || 1) - 1));
-  go((parseInt(location.hash.slice(1), 10) || 1) - 1);
+  // A bookmark typed or pasted into the address bar (or a link to #N) jumps to that slide
+  window.addEventListener("hashchange", () => go(slideFromBookmark()));
+  window.addEventListener("popstate", () => go(slideFromBookmark()));
+  // Journey links: absolute bookmark URLs, so "open in new tab" also lands on the right slide
+  journey.querySelectorAll("a").forEach((a, k) => {
+    const target = k < steps.length ? steps[k].index : refIndex;
+    a.href = bookmarkUrl(target);
+  });
+  go(slideFromBookmark());                      // open at the bookmarked slide
 })();
 </script>
 </body>
