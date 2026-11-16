@@ -10,6 +10,9 @@ examples use the files in this folder, and the numbers quoted come from running 
 To keep things simple, it only uses the models taught in the tutorials (Weeks 2, 3,
 4 and 6), plus the two regression models the README mentions. Section 5 lists them all.
 
+In an exam, use it together with `Exam_Playbook.md`, which shows how to adapt the
+week files to a new dataset step by step.
+
 ---
 
 ## Contents
